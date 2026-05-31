@@ -1,0 +1,53 @@
+# Minimal single-broker Apache Kafka for learning the CLI.
+#
+# - One container, no ZooKeeper (KRaft mode), no web UI, no database.
+# - The same broker is BOTH the broker and the controller (combined mode).
+# - Reachable from your host machine at localhost:9092, and from inside the
+#   container (where the CLI tools live) at localhost:9092 as well.
+#
+# Start:  docker compose -f docker/base/docker-compose.yml up -d
+# Stop:   docker compose -f docker/base/docker-compose.yml down
+# Wipe:   docker compose -f docker/base/docker-compose.yml down -v   (also deletes data)
+
+services:
+  kafka:
+    image: apache/kafka:3.9.1
+    container_name: kafka
+    hostname: kafka
+    ports:
+      - "9092:9092"            # host -> broker (PLAINTEXT)
+    environment:
+      # --- KRaft identity ---------------------------------------------------
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@localhost:9093"
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
+      # --- Listeners --------------------------------------------------------
+      # PLAINTEXT  = client traffic (producers/consumers/CLI)
+      # CONTROLLER = internal KRaft metadata traffic (not for clients)
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      # --- Single-node friendly defaults ------------------------------------
+      # With only one broker, replication can never exceed 1.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      # Don't wait before forming a consumer group (snappier for demos).
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Default partitions for auto-created topics. Lesson 1 starts at 1 on
+      # purpose so you can SEE the difference when you create with --partitions.
+      KAFKA_NUM_PARTITIONS: 1
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  kafka_data: {}
